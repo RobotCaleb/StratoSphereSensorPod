@@ -21,7 +21,7 @@
 // 12/A1   - TTF103 Thermistor - 9850 Ohms
 // 13/A2   - TTF103 Thermistor - 9800 Ohms
 // 14/A3   - TTF103 Thermistor - 9810 Ohms
-// 15/NA   - Empty
+// 15/NA   - 3.3V AREF
 
 
 //  digital pin that DHT is on
