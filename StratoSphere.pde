@@ -13,7 +13,7 @@
 //  4/D8   - OpenLog TXO
 //  5/D9   - OpenLog RXI
 //  6/D3   - DS18B20 Temperature Sensors
-//  7/D5   - Remove Before Flight
+//  7/D4   - Remove Before Flight
 //  8/D2   - AM2302 Humidity
 //  9/D1   - D2523T-6 GPS RX
 // 10/D0   - D2523T-6 GPS TX
@@ -29,7 +29,7 @@
 #define ONE_WIRE_BUS_PIN 3  // temperature
 #define OPENLOG_RX_PIN   8  // OpenLog RX
 #define OPENLOG_TX_PIN   9  // OpenLog TX
-#define RBF_PIN          5  // Remove before flight
+#define RBF_PIN          4  // Remove before flight
 
 // DHT 22  (AM2302)
 #define DHT_TYPE DHT22
@@ -38,10 +38,12 @@
 #define TEMPERATURE_PRECISION 9
 
 // Setup a oneWire instance
+#if WITH_ONE_WIRE
 OneWire oneWire(ONE_WIRE_BUS_PIN);
 
 // Pass our oneWire reference to Dallas Temperature.
 DallasTemperature sensors(&oneWire);
+#endif // WITH_ONE_WIRE
 
 // arrays to hold device addresses
 DeviceAddress insideThermometer, outsideThermometer;
@@ -52,7 +54,9 @@ DHT dht(DHT_PIN, DHT_TYPE);
 AltSoftSerial mySerial;
 
 // if not on software serial, should probably be on hardware serial. :)
+// if on software serial, 5 is rx, 6 is tx
 #define GPS_ON_SWSERIAL 0
+#define WITH_ONE_WIRE   0
 
 #define DUMPDEBUG 0
 
@@ -62,20 +66,10 @@ TinyGPS gps;
 SoftwareSerial nss(5, 6);
 #endif
 
-// THIS CODE EXPECTS THERMISTORS TO BE ON ANALOG PINS 0 - (NUMTHERMISTORS - 1)
-// WHERE N IS THE NUMBER OF THERMISTORS
-// resistance at 25 degrees C
-#define THERMISTORNOMINAL 10000
-// temp. for nominal resistance (almost always 25 C)
-#define TEMPERATURENOMINAL 25
-// The beta coefficient of the thermistor (usually 3000-4000)
-#define BCOEFFICIENT 3435
-// the value of the 'other' resistor
-#define RESISTOR0 9840
-#define RESISTOR1 9860
-#define RESISTOR2 9810
-#define RESISTOR3 9820
+void fillThermistorTemps();
 
+// THIS CODE EXPECTS THERMISTORS TO BE ON ANALOG PINS 0 - (N - 1)
+// WHERE N IS THE NUMBER OF THERMISTORS
 // supports up to 4
 #define NUMTHERMISTORS 4
 // how many samples to take and average, more takes longer
@@ -83,8 +77,15 @@ SoftwareSerial nss(5, 6);
 #define NUMSAMPLES 5
 
 int whichSample;
-int thermistorSamples[NUMTHERMISTORS][NUMSAMPLES];
-int thermistorResistors[NUMTHERMISTORS];
+// the value of the 'other' resistor
+int thermResistors[NUMTHERMISTORS]      = {9820, 9850, 9800, 9800};
+// The beta coefficient of the thermistor (usually 3000-4000)
+int thermCoefficients[NUMTHERMISTORS]   = {3950, 3435, 3435, 3435};
+// temp. for nominal resistance (almost always 25 C)
+int thermTempNominals[NUMTHERMISTORS]   = {  25,   25,   25,   25};
+// resistance at 25 degrees C
+int thermResistNominals[NUMTHERMISTORS] = {10000, 10000, 10000, 10000};
+int thermSamples[NUMTHERMISTORS][NUMSAMPLES];
 float thermistorTemperatures[NUMTHERMISTORS];
 
 struct GPSData
@@ -127,7 +128,9 @@ void printAddress(DeviceAddress deviceAddress)
 void setup()
 {
     dht.begin();
+#if WITH_ONE_WIRE
     sensors.begin();
+#endif //WITH_ONE_WIRE
 
     // set the data rate for the SoftwareSerial port
     mySerial.begin(19200);
@@ -138,6 +141,7 @@ void setup()
     Serial.begin(9600);
 #endif
 
+#if WITH_ONE_WIRE
 #if GPS_ON_SWSERIAL
     // locate devices on the bus
     Serial.print("Locating devices...");
@@ -195,7 +199,8 @@ void setup()
     Serial.print(F("Device 1 (Outside) Resolution: "));
     Serial.print(sensors.getResolution(outsideThermometer), DEC);
     Serial.println();
-#endif
+#endif // GPS_ON_SWSERIAL
+#endif //WITH_ONE_WIRE
 
     Serial.print(F("Front loading "));
     Serial.print(NUMTHERMISTORS);
@@ -204,23 +209,10 @@ void setup()
     {
         for (int sample = 0; sample < NUMSAMPLES; ++sample)
         {
-            thermistorSamples[thermistor][sample]  = analogRead(thermistor);
+            fillThermistorTemps();
         }
     }
     whichSample = 0;
-
-#if NUMTHERMISTORS > 0
-    thermistorResistors[0] = RESISTOR0;
-#endif
-#if NUMTHERMISTORS > 1
-    thermistorResistors[1] = RESISTOR1;
-#endif
-#if NUMTHERMISTORS > 2
-    thermistorResistors[2] = RESISTOR2;
-#endif
-#if NUMTHERMISTORS > 3
-    thermistorResistors[3] = RESISTOR3;
-#endif
 
     analogReference(EXTERNAL);
 
@@ -233,7 +225,7 @@ void getThermistors()
 {
     for (int thermistor = 0; thermistor < NUMTHERMISTORS; ++thermistor)
     {
-        thermistorSamples[thermistor][whichSample] = analogRead(thermistor);
+        thermSamples[thermistor][whichSample] = analogRead(thermistor);
     }
 
 #if GPS_ON_SWSERIAL && DUMPDEBUG
@@ -242,12 +234,12 @@ void getThermistors()
     {
         if (thermistor < NUMTHERMISTORS - 1)
         {
-            Serial.print(thermistorSamples[thermistor][whichSample]);
+            Serial.print(thermSamples[thermistor][whichSample]);
             Serial.print(F(", "));
         }
         else
         {
-           Serial.println(thermistorSamples[thermistor][whichSample]);
+           Serial.println(thermSamples[thermistor][whichSample]);
         }
     }
 #endif
@@ -263,22 +255,22 @@ void fillThermistorTemps()
         float average  = 0;
         for (int i = 0; i < NUMSAMPLES; ++i)
         {
-            average = average + thermistorSamples[thermistor][i];
+            average = average + thermSamples[thermistor][i];
         }
         average = average / NUMSAMPLES;
 
         // convert the value to resistance
         average = 1023 / average - 1;
-        average = thermistorResistors[thermistor] / average;
+        average = thermResistors[thermistor] / average;
 
-        float steinhart = average / THERMISTORNOMINAL;               // (R/Ro)
-        steinhart = log(steinhart);                                  // ln(R/Ro)
-        steinhart = steinhart / BCOEFFICIENT;                        // 1/B * ln(R/Ro)
-        steinhart = steinhart + 1.0 / (TEMPERATURENOMINAL + 273.15); // + (1/To)
-        steinhart = 1.0 / steinhart;                                 // Invert
-        steinhart = steinhart - 273.15;                              // convert to C
+        float stein = average / thermResistNominals[thermistor];              // (R/Ro)
+        stein       = log(stein);                                             // ln(R/Ro)
+        stein       = stein / thermCoefficients[thermistor];                  // 1/B * ln(R/Ro)
+        stein       = stein + 1.0 / (thermTempNominals[thermistor] + 273.15); // + (1/To)
+        stein       = 1.0 / stein;                                            // Invert
+        stein       = stein - 273.15;                                         // convert to C
 
-        thermistorTemperatures[thermistor] = steinhart;
+        thermistorTemperatures[thermistor] = stein;
     }
 }
 
@@ -324,43 +316,61 @@ byte updateTurn(0);
 float insideTemp(0.0f);
 float outsideTemp(0.0f);
 float humidity(0.0f);
+float hSenTemp(0.0f);
+unsigned long timeOfStartLogging(0);
 
 void loop()
 {
+    unsigned long curTime = millis();
+    feedGPS(curTime);
+
+    if (curTime - lastSensorUpdate > 1000)
+    {
+        switch (updateTurn)
+        {
+            case 0:
+                humidity = dht.readHumidity();
+                break;
+            case 1:
+                hSenTemp = dht.readTemperature();
+                break;
+            case 2:
+#if WITH_ONE_WIRE
+                sensors.requestTemperatures();
+                insideTemp  = sensors.getTempC(insideThermometer);
+                outsideTemp = sensors.getTempC(outsideThermometer);
+#endif // WITH_ONE_WIRE
+                break;
+        }
+        updateTurn = (updateTurn + 1) % 2;
+        lastSensorUpdate = millis();
+    }
+
+    fillGPS(gps);
+    getThermistors();
+    fillThermistorTemps();
+
     if (digitalRead(RBF_PIN) == LOW)
     {
-        // slow?
-        feedGPS(millis());
-
-        if (millis() - lastUpdate >= 500)
+        if (timeOfStartLogging == 0)
         {
-            // fast
-            if (millis() - lastSensorUpdate > 5000)
-            {
-                switch (updateTurn)
-                {
-                    case 0:
-                        sensors.requestTemperatures();
-                        insideTemp  = sensors.getTempC(insideThermometer);
-                        outsideTemp = sensors.getTempC(outsideThermometer);
-                        break;
-                    case 1:
-                        humidity = dht.readHumidity();
-                        break;
-                }
-                updateTurn = (updateTurn + 1) % 2;
-            }
+            timeOfStartLogging = curTime;
+        }
 
-            fillGPS(gps);
-            getThermistors();
-            fillThermistorTemps();
-
-            mySerial.print(F("!h:"));
+        if (millis() - lastUpdate >= 1000)
+        {
+            mySerial.print(F("!tm:"));
+            mySerial.print(millis() - timeOfStartLogging);
+            mySerial.print(F(",h:"));
             mySerial.print(humidity);
+            mySerial.print(F(",ht:"));
+            mySerial.print(hSenTemp);
+#if WITH_ONE_WIRE
             mySerial.print(F(",i:"));
             mySerial.print(insideTemp);
             mySerial.print(F(",o:"));
             mySerial.print(outsideTemp);
+#endif //WITH_ONE_WIRE
 
             for (int thermistor = 0; thermistor < NUMTHERMISTORS; ++thermistor)
             {
@@ -380,8 +390,8 @@ void loop()
             mySerial.print(gpsData.lon);
             mySerial.print(F(",gfa:"));
             mySerial.print(gpsData.fixAge);
-            Serial.print(F(",gal:"));
-            Serial.print(gpsData.alt);
+            mySerial.print(F(",gal:"));
+            mySerial.print(gpsData.alt);
             mySerial.print(F(",gdt:"));
             mySerial.print(gpsData.date);
             mySerial.print(F(",gtm:"));
@@ -395,12 +405,18 @@ void loop()
             mySerial.print(F("#\n"));
 
 #if GPS_ON_SWSERIAL
-            Serial.print(F("!h:"));
+            Serial.print(F("!tm:"));
+            Serial.print(millis() - timeOfStartLogging);
+            Serial.print(F(",h:"));
             Serial.print(humidity);
+            Serial.print(F(",ht:"));
+            Serial.print(hSenTemp);
+#if WITH_ONE_WIRE
             Serial.print(F(",i:"));
             Serial.print(insideTemp);
             Serial.print(F(",o:"));
             Serial.print(outsideTemp);
+#endif //WITH_ONE_WIRE
 
             for (int thermistor = 0; thermistor < NUMTHERMISTORS; ++thermistor)
             {
