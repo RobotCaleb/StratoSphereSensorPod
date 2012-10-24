@@ -24,7 +24,7 @@
 // 15/AREF - 3.3V AREF
 
 
-//  digital pin that DHT is on
+// digital pin that DHT is on
 #define DHT_PIN          2  // humidity
 #define ONE_WIRE_BUS_PIN 3  // temperature
 #define OPENLOG_RX_PIN   8  // OpenLog RX
@@ -67,6 +67,7 @@ SoftwareSerial nss(5, 6);
 #endif
 
 void fillThermistorTemps();
+void logData();
 
 // THIS CODE EXPECTS THERMISTORS TO BE ON ANALOG PINS 0 - (N - 1)
 // WHERE N IS THE NUMBER OF THERMISTORS
@@ -359,98 +360,104 @@ void loop()
 
         if (millis() - lastUpdate >= 1000)
         {
-            mySerial.print(F("!tm:"));
-            mySerial.print(millis() - timeOfStartLogging);
-            mySerial.print(F(",h:"));
-            mySerial.print(humidity);
-            mySerial.print(F(",ht:"));
-            mySerial.print(hSenTemp);
-#if WITH_ONE_WIRE
-            mySerial.print(F(",i:"));
-            mySerial.print(insideTemp);
-            mySerial.print(F(",o:"));
-            mySerial.print(outsideTemp);
-#endif //WITH_ONE_WIRE
-
-            for (int thermistor = 0; thermistor < NUMTHERMISTORS; ++thermistor)
-            {
-                mySerial.print(",t");
-                mySerial.print(thermistor);
-                mySerial.print(":");
-                mySerial.print(thermistorTemperatures[thermistor]);
-            }
-
-            mySerial.print(F(",gsa:"));
-            mySerial.print(gpsData.satCount);
-            mySerial.print(F(",ghd:"));
-            mySerial.print(gpsData.hdop);
-            mySerial.print(F(",glt:"));
-            mySerial.print(gpsData.lat);
-            mySerial.print(F(",gln:"));
-            mySerial.print(gpsData.lon);
-            mySerial.print(F(",gfa:"));
-            mySerial.print(gpsData.fixAge);
-            mySerial.print(F(",gal:"));
-            mySerial.print(gpsData.alt);
-            mySerial.print(F(",gdt:"));
-            mySerial.print(gpsData.date);
-            mySerial.print(F(",gtm:"));
-            mySerial.print(gpsData.time);
-            mySerial.print(F(",gda:"));
-            mySerial.print(gpsData.dateAge);
-            mySerial.print(F(",gsp:"));
-            mySerial.print(gpsData.speed);
-            mySerial.print(F(",gco:"));
-            mySerial.print(gpsData.course);
-            mySerial.print(F("#\n"));
-
-#if GPS_ON_SWSERIAL
-            Serial.print(F("!tm:"));
-            Serial.print(millis() - timeOfStartLogging);
-            Serial.print(F(",h:"));
-            Serial.print(humidity);
-            Serial.print(F(",ht:"));
-            Serial.print(hSenTemp);
-#if WITH_ONE_WIRE
-            Serial.print(F(",i:"));
-            Serial.print(insideTemp);
-            Serial.print(F(",o:"));
-            Serial.print(outsideTemp);
-#endif //WITH_ONE_WIRE
-
-            for (int thermistor = 0; thermistor < NUMTHERMISTORS; ++thermistor)
-            {
-                Serial.print(",t");
-                Serial.print(thermistor);
-                Serial.print(":");
-                Serial.print(thermistorTemperatures[thermistor]);
-            }
-
-            Serial.print(F(",gsa:"));
-            Serial.print(gpsData.satCount);
-            Serial.print(F(",ghd:"));
-            Serial.print(gpsData.hdop);
-            Serial.print(F(",glt:"));
-            Serial.print(gpsData.lat);
-            Serial.print(F(",gln:"));
-            Serial.print(gpsData.lon);
-            Serial.print(F(",gfa:"));
-            Serial.print(gpsData.fixAge);
-            Serial.print(F(",gal:"));
-            Serial.print(gpsData.alt);
-            Serial.print(F(",gdt:"));
-            Serial.print(gpsData.date);
-            Serial.print(F(",gtm:"));
-            Serial.print(gpsData.time);
-            Serial.print(F(",gda:"));
-            Serial.print(gpsData.dateAge);
-            Serial.print(F(",gsp:"));
-            Serial.print(gpsData.speed);
-            Serial.print(F(",gco:"));
-            Serial.print(gpsData.course);
-            Serial.print(F("#\n"));
-#endif
+            logData();
             lastUpdate = millis();
         }
     }
+}
+
+// writes to serial and to OpenLog for logging
+void logData()
+{
+    mySerial.print(F("!tm:"));
+    mySerial.print(millis() - timeOfStartLogging);
+    mySerial.print(F(",h:"));
+    mySerial.print(humidity);
+    mySerial.print(F(",ht:"));
+    mySerial.print(hSenTemp);
+#if WITH_ONE_WIRE
+    mySerial.print(F(",i:"));
+    mySerial.print(insideTemp);
+    mySerial.print(F(",o:"));
+    mySerial.print(outsideTemp);
+#endif //WITH_ONE_WIRE
+
+    for (int thermistor = 0; thermistor < NUMTHERMISTORS; ++thermistor)
+    {
+        mySerial.print(",t");
+        mySerial.print(thermistor);
+        mySerial.print(":");
+        mySerial.print(thermistorTemperatures[thermistor]);
+    }
+
+    mySerial.print(F(",gsa:"));
+    mySerial.print(gpsData.satCount);
+    mySerial.print(F(",ghd:"));
+    mySerial.print(gpsData.hdop);
+    mySerial.print(F(",glt:"));
+    mySerial.print(gpsData.lat);
+    mySerial.print(F(",gln:"));
+    mySerial.print(gpsData.lon);
+    mySerial.print(F(",gfa:"));
+    mySerial.print(gpsData.fixAge);
+    mySerial.print(F(",gal:"));
+    mySerial.print(gpsData.alt);
+    mySerial.print(F(",gdt:"));
+    mySerial.print(gpsData.date);
+    mySerial.print(F(",gtm:"));
+    mySerial.print(gpsData.time);
+    mySerial.print(F(",gda:"));
+    mySerial.print(gpsData.dateAge);
+    mySerial.print(F(",gsp:"));
+    mySerial.print(gpsData.speed);
+    mySerial.print(F(",gco:"));
+    mySerial.print(gpsData.course);
+    mySerial.print(F("#\n"));
+
+#if GPS_ON_SWSERIAL
+    Serial.print(F("!tm:"));
+    Serial.print(millis() - timeOfStartLogging);
+    Serial.print(F(",h:"));
+    Serial.print(humidity);
+    Serial.print(F(",ht:"));
+    Serial.print(hSenTemp);
+#if WITH_ONE_WIRE
+    Serial.print(F(",i:"));
+    Serial.print(insideTemp);
+    Serial.print(F(",o:"));
+    Serial.print(outsideTemp);
+#endif //WITH_ONE_WIRE
+
+    for (int thermistor = 0; thermistor < NUMTHERMISTORS; ++thermistor)
+    {
+        Serial.print(",t");
+        Serial.print(thermistor);
+        Serial.print(":");
+        Serial.print(thermistorTemperatures[thermistor]);
+    }
+
+    Serial.print(F(",gsa:"));
+    Serial.print(gpsData.satCount);
+    Serial.print(F(",ghd:"));
+    Serial.print(gpsData.hdop);
+    Serial.print(F(",glt:"));
+    Serial.print(gpsData.lat);
+    Serial.print(F(",gln:"));
+    Serial.print(gpsData.lon);
+    Serial.print(F(",gfa:"));
+    Serial.print(gpsData.fixAge);
+    Serial.print(F(",gal:"));
+    Serial.print(gpsData.alt);
+    Serial.print(F(",gdt:"));
+    Serial.print(gpsData.date);
+    Serial.print(F(",gtm:"));
+    Serial.print(gpsData.time);
+    Serial.print(F(",gda:"));
+    Serial.print(gpsData.dateAge);
+    Serial.print(F(",gsp:"));
+    Serial.print(gpsData.speed);
+    Serial.print(F(",gco:"));
+    Serial.print(gpsData.course);
+    Serial.print(F("#\n"));
+#endif
 }
