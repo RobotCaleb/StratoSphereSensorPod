@@ -20,7 +20,7 @@
 // 11/A0   - TTF103 Thermistor - 9820 Ohms
 // 12/A1   - TTF103 Thermistor - 9850 Ohms
 // 13/A2   - TTF103 Thermistor - 9800 Ohms
-// 14/A3   - TTF103 Thermistor - 9810 Ohms
+// 14/A3   - TTF103 Thermistor - 9800 Ohms
 // 15/AREF - 3.3V AREF
 
 
@@ -52,6 +52,9 @@ DHT dht(DHT_PIN, DHT_TYPE);
 
 // RX on pin 8, TX on pin 9
 AltSoftSerial mySerial;
+
+// gps successful setup indicator
+byte gps_set_sucess = 0 ;
 
 // if not on software serial, should probably be on hardware serial. :)
 // if on software serial, 5 is rx, 6 is tx
@@ -126,6 +129,118 @@ void printAddress(DeviceAddress deviceAddress)
     }
 }
 
+// configuration code from http://ukhas.org.uk/guides:ublox6
+
+// Send a byte array of UBX protocol to the GPS
+void sendUBX(uint8_t *MSG, uint8_t len)
+{
+    for(int i=0; i<len; i++)
+    {
+#if GPS_ON_SWSERIAL
+        nss.write(MSG[i]);
+        Serial.print(MSG[i], HEX);
+#else
+        Serial.write(MSG[i]);
+#endif // GPS_ON_SWSERIAL
+    }
+#if GPS_ON_SWSERIAL
+    nss.println();
+#else
+    Serial.println();
+#endif // GPS_ON_SWSERIAL
+}
+
+// Calculate expected UBX ACK packet and parse UBX response from GPS
+boolean getUBX_ACK(uint8_t *MSG)
+{
+    uint8_t b;
+    uint8_t ackByteID = 0;
+    uint8_t ackPacket[10];
+    unsigned long startTime = millis();
+    mySerial.print(F(" * Reading ACK response: "));
+#if GPS_ON_SWSERIAL
+    Serial.print(F(" * Reading ACK response: "));
+#endif // GPS_ON_SWSERIAL
+
+    // Construct the expected ACK packet
+    ackPacket[0] = 0xB5;  // header
+    ackPacket[1] = 0x62;  // header
+    ackPacket[2] = 0x05;  // class
+    ackPacket[3] = 0x01;  // id
+    ackPacket[4] = 0x02;  // length
+    ackPacket[5] = 0x00;
+    ackPacket[6] = MSG[2];    // ACK class
+    ackPacket[7] = MSG[3];    // ACK id
+    ackPacket[8] = 0;     // CK_A
+    ackPacket[9] = 0;     // CK_B
+
+    // Calculate the checksums
+    for (uint8_t i=2; i<8; i++)
+    {
+        ackPacket[8] = ackPacket[8] + ackPacket[i];
+        ackPacket[9] = ackPacket[9] + ackPacket[8];
+    }
+
+    while (1)
+    {
+        // Test for success
+        if (ackByteID > 9)
+        {
+            // All packets in order!
+            mySerial.println(F(" (SUCCESS!)"));
+            Serial.println(F(" (SUCCESS!)"));
+            return true;
+        }
+
+        // Timeout if no valid response in 3 seconds
+        if (millis() - startTime > 3000)
+        {
+            mySerial.println(F("(FAILED!)"));
+            Serial.println(" (FAILED!)");
+            return false;
+        }
+
+        // Make sure data is available to read
+#if GPS_ON_SWSERIAL
+        if (nss.available())
+#else
+        if (Serial.available())
+#endif // GPS_ON_SWSERIAL
+        {
+#if GPS_ON_SWSERIAL
+            b = nss.read();
+#else
+            b = Serial.read();
+#endif // GPS_ON_SWSERIAL
+
+            // Check that bytes arrive in sequence as per expected ACK packet
+            if (b == ackPacket[ackByteID])
+            {
+                ackByteID++;
+#if GPS_ON_SWSERIAL
+                Serial.print(b, HEX);
+#endif // GPS_ON_SWSERIAL
+            }
+            else
+            {
+                ackByteID = 0;  // Reset and look again, invalid order
+            }
+        }
+    }
+}
+
+void setupGPS()
+{
+    uint8_t setNav[] = {
+        0xB5, 0x62, 0x06, 0x24, 0x24, 0x00, 0xFF, 0xFF, 0x06, 0x03, 0x00, 0x00, 0x00, 0x00, 0x10, 0x27, 0x00, 0x00, 0x05, 0x00, 0xFA, 0x00, 0xFA, 0x00, 0x64, 0x00, 0x2C, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x16, 0xDC                        };
+      while(!gps_set_sucess)
+      {
+        sendUBX(setNav, sizeof(setNav)/sizeof(uint8_t));
+        gps_set_sucess=getUBX_ACK(setNav);
+      }
+      gps_set_sucess=0;
+}
+
 void setup()
 {
     dht.begin();
@@ -138,9 +253,12 @@ void setup()
 
 #if GPS_ON_SWSERIAL
     Serial.begin(19200);
+    nss.begin(9600);
 #else
     Serial.begin(9600);
 #endif
+
+    setupGPS();
 
 #if WITH_ONE_WIRE
 #if GPS_ON_SWSERIAL
@@ -216,10 +334,6 @@ void setup()
     whichSample = 0;
 
     analogReference(EXTERNAL);
-
-#if GPS_ON_SWSERIAL
-    nss.begin(9600);
-#endif
 }
 
 void getThermistors()
